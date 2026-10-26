@@ -1,0 +1,7 @@
+EKAKE
+2.1. Cada coluna é suposto conter os atributos que estão descritos no DATA_DICTIONARY.md. 
+Identificadores: Audio_Song; Lyric_Song; ALLMusic ID ; AppearanceTracks_ID;  “Appearance ALBUM Id;
+Measurements: Relevance; Duration; Year; LowesrYear; ActualYear;
+Administrative: All Music extraction date; Relevance; Sample, SampleUrl;
+
+ 2.2.  Não, não há correlação 1:1. 
