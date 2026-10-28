@@ -1,8 +1,3 @@
-================================================================================
-PROJETO ECAC - RECONHECIMENTO DE EMOÇÃO EM MÚSICA (MER)
-RESPOSTAS DETALHADAS ÀS QUESTÕES DO ENUNCIADO (SECÇÕES 2 A 8)
-================================================================================
-
 --------------------------------------------------------------------------------
 2. COMPREENSÃO DOS DADOS (DATA UNDERSTANDING)
 --------------------------------------------------------------------------------
@@ -427,7 +422,3 @@ Portanto, a partição de teste publicada NÃO é artist-disjoint. Como metade d
 --------------------------------------------------------------------------------
 - A aplicação de deployment do ponto 16 é uma aplicação prática onde utilizadores submetem novas músicas, ficheiros de áudio e letras independentes que não pertencem necessariamente aos artistas consolidados do catálogo AllMusic. A aplicação enfrentará, portanto, o desafio de prever emoções para ARTISTAS DESCONHECIDOS (o problema de cold-start).
 - Consequentemente, o protocolo mais honesto, rigoroso e robusto para orientar todas as decisões de engenharia de atributos e seleção de modelos no resto do projeto deve ser o protocolo **Artist-Disjoint**. Adotar este protocolo impede que a equipa seja enganada por hiperparâmetros ou representações que apenas memorizam a identidade acústica/lírica dos artistas em vez de aprenderem as verdadeiras assinaturas universais da emoção musical.
-
-================================================================================
-FIM DAS RESPOSTAS ÀS TAREFAS 1 A 8
-================================================================================
