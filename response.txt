@@ -1,7 +1,433 @@
-EKAKE
-2.1. Cada coluna é suposto conter os atributos que estão descritos no DATA_DICTIONARY.md. 
-Identificadores: Audio_Song; Lyric_Song; ALLMusic ID ; AppearanceTracks_ID;  “Appearance ALBUM Id;
-Measurements: Relevance; Duration; Year; LowesrYear; ActualYear;
-Administrative: All Music extraction date; Relevance; Sample, SampleUrl;
+================================================================================
+PROJETO ECAC - RECONHECIMENTO DE EMOÇÃO EM MÚSICA (MER)
+RESPOSTAS DETALHADAS ÀS QUESTÕES DO ENUNCIADO (SECÇÕES 2 A 8)
+================================================================================
 
- 2.2.  Não, não há correlação 1:1. 
+--------------------------------------------------------------------------------
+2. COMPREENSÃO DOS DADOS (DATA UNDERSTANDING)
+--------------------------------------------------------------------------------
+
+2.1. O que é suposto cada coluna conter? Quais são medições (measurements), quais são identificadores (identifiers) e quais são administrativas (administrative)?
+--------------------------------------------------------------------------------
+Com base no ficheiro DATA_DICTIONARY.md e na especificação do projeto, cada coluna de metadata.csv destina-se a representar uma faceta do dataset, agrupando-se em três categorias principais:
+
+1. Identificadores (Identifiers):
+   - Audio_Song: Identificador do ficheiro de excerto áudio de 30 segundos (chave de ligação à pasta audio/<Quadrant>/).
+   - Lyric_Song: Identificador do ficheiro de texto da letra (chave de ligação à pasta lyrics/<Quadrant>/).
+   - AllMusic Id: Identificador unívoco da faixa no catálogo online AllMusic.
+   - AppearancesTrackIDs: Lista de identificadores de faixa da AllMusic onde a mesma gravação surge noutros lançamentos/álbuns.
+   - AppearancesAlbumIDs: Lista de identificadores de álbum correspondentes a cada entrada de AppearancesTrackIDs.
+
+2. Medições (Measurements):
+   - Relevance: Pontuação numérica devolvida pelo motor de busca da AllMusic para a query que recuperou a faixa (número real positivo).
+   - Year: Data de lançamento registada no AllMusic no formato YYYY-MM-DD (com componentes desconhecidas como '??').
+   - LowestYear: Data do lançamento mais antigo encontrado para a gravação, em formato DD/MM/YYYY.
+   - ActualYear: Ano de lançamento consolidado pelos autores do dataset (ano civil de 4 dígitos).
+   - Duration: Duração total da faixa completa em segundos (valor estritamente positivo).
+   - Moods: Lista de etiquetas de humor do vocabulário reduzido da AllMusic separadas por vírgula.
+   - MoodsAll: Lista de etiquetas de humor do vocabulário completo da AllMusic.
+   - MoodsAllWeights: Pesos de relevância associados a cada etiqueta em MoodsAll.
+   - Genres: Lista de etiquetas de género musical.
+   - GenreWeights: Pesos numéricos associados a cada etiqueta de Genres.
+   - Themes: Lista de etiquetas temáticas da faixa.
+   - ThemeWeights: Pesos associados a Themes.
+   - Styles: Lista de estilos musicais da faixa.
+   - StyleWeights: Pesos associados a Styles.
+   - num_Genres: Número total de géneros registados para a faixa.
+   - num_MoodsAll: Número total de etiquetas de humor registadas para a faixa.
+   * Nota: No ficheiro av_values.csv encontram-se as medições contínuas de Valence (Valência) e Arousal (Excitação) na escala de 0 a 1.
+
+3. Administrativas (Administrative):
+   - AllMusic Extraction Date: Identificador da campanha de extração dos dados da AllMusic ('Old' ou 'New').
+   - Sample: Indicador binário se um excerto de áudio de 30s estava disponível na recolha.
+   - SampleURL: Endereço web de onde o excerto foi descarregado.
+
+4. Variável Alvo (Target):
+   - Quadrant: Quadrante afetivo no modelo circumplexo de Russell (Q1, Q2, Q3, Q4), deduzido do limiar 0.5 em Valência e Excitação.
+
+
+2.2. As quatro fontes juntam-se 1 para 1? Se não, onde falha e o que decorre daí?
+--------------------------------------------------------------------------------
+Não, as quatro fontes (ficheiros de áudio, ficheiros de letras, capas de álbuns e tabela de metadados) NÃO se interligam numa relação 1 para 1 estrita. A análise direta dos dados revela as seguintes quebras:
+
+1. Áudio e Letras vs. Metadados:
+   - Existem 2216 ficheiros de áudio (.mp3) e 2216 ficheiros de letras (.txt), que constituem o dataset MERGE Bimodal Complete original.
+   - No entanto, a tabela merge_ecac/metadata.csv contém apenas 1323 músicas únicas (e 1348 linhas totais devido a 25 duplicados exatos).
+   - Falha: 893 músicas foram intencionalmente removidas da tabela de metadados devido à subamostragem das classes Q2 e Q4 (registadas com código 'F' em truth_rows.csv).
+
+2. Capas de Álbum (album_covers) vs. Metadados:
+   - Existem apenas 2019 capas de álbum no total.
+   - Falha: 197 músicas do dataset original não possuem capa (a sua recolha falhou na origem). Para as músicas presentes na tabela metadata.csv, 109 não dispõem de capa correspondente.
+
+3. Duplicação interna na tabela de metadados:
+   - Existem 25 linhas duplicadas exatamente (código A1), gerando uma relação de 1 para muitos entre um ficheiro de áudio e as linhas da tabela.
+
+O que decorre disto:
+- Uma junção simples (inner join) sem filtragem provocaria a perda inadvertida de dados ou duplicação de instâncias.
+- Para a aprendizagem multimodal (áudio + letras + imagem), a ausência de capa em certas faixas cria o problema de dados multimodais incompletos, exigindo estratégias de imputação de representação visual ou descarte de instâncias não emparelhadas.
+- A presença de 893 ficheiros de media no disco que não constam na tabela metadata_ecac exige filtragem cuidadosa baseada nos IDs da tabela para não introduzir dados que foram excluídos pelo protocolo de avaliação.
+
+
+2.3. A partir da documentação apenas, antes de qualquer computação: quais colunas são suspeitas de dar o alvo (target leakage)? Registar a lista.
+--------------------------------------------------------------------------------
+Lista de colunas suspeitas de fuga do alvo (Target Leakage):
+1. Moods
+2. MoodsAll
+3. MoodsAllWeights
+4. Styles
+5. Genres
+6. AppearancesTrackIDs
+
+Justificação:
+- A documentação e o artigo original do dataset MERGE indicam explicitamente que os rótulos de emoção (Valência, Excitação e respetivo Quadrante) foram gerados de forma semi-automática a partir do mapeamento das etiquetas de humor da AllMusic (tags de Moods) utilizando as normas léxicas de Warriner et al. para 13.915 lemas. Portanto, as colunas de "Moods" não são variáveis preditivas legítimas: são a própria fonte a partir da qual o alvo foi calculado. Utilizá-las no treino representa fuga direta do alvo (target leakage).
+- As colunas de Styles e Genres possuem correlações semânticas fortíssimas com as emoções (por exemplo, faixas de "Heavy Metal" estão associadas quase exclusivamente ao Q2/raiva, enquanto "Lullabies" associam-se ao Q4/serenidade).
+- A coluna AppearancesTrackIDs pode identificar versões da mesma música que contenham etiquetas associadas diretamente à anotação.
+
+
+--------------------------------------------------------------------------------
+3. ANÁLISE EXPLORATÓRIA (EXPLORATORY ANALYSIS)
+--------------------------------------------------------------------------------
+
+3.1. Descrever cada coluna: distribuição, alcance (range), valores em falta.
+--------------------------------------------------------------------------------
+- Audio_Song / Lyric_Song: Identificadores alfanuméricos únicos. 0 valores em falta.
+- Quadrant: Variável alvo categórica com 4 classes (Q1: 525, Q3: 500, Q2: 168, Q4: 130). 0 valores em falta.
+- Relevance: Variável contínua. Alcance: [1.01, 1.84]. Média: 1.06, Desvio padrão: 0.10. 248 valores em falta (18.4%).
+- Duration: Duração em segundos. Apresenta alcance extremamente corrompido: mínimo de -1.0s (código sentinela) e máximo de 505.000s (valores em milissegundos). 278 valores em falta (20.6%).
+- ActualYear: Ano de lançamento. Alcance com valores de 1921 a 2032 (incluindo datas futuras e anos sentinela). 309 valores em falta (22.9%).
+- LowestYear: Data de lançamento catalogada. 506 valores em falta (37.5%).
+- Year: Data catalogada AllMusic. 196 valores em falta (14.5%).
+- num_Genres / num_MoodsAll: 1338 valores em falta (99.3%). Quase totalmente vazias.
+- Sample: Binária (1.0 ou 0.0), com 90.0% das observações com valor 1. 126 valores em falta (9.3%).
+- AllMusic Extraction Date: Categórica binária ('Old': 90.7%, 'New': 9.3%). 0 valores em falta.
+
+
+3.2. Quais colunas estão quase vazias? Quais são constantes? Quais medem algo diferente do que o seu nome diz?
+--------------------------------------------------------------------------------
+- Colunas quase vazias:
+  `num_Genres` e `num_MoodsAll` têm 1338 valores em falta num total de 1348 linhas (99.3% de valores omissos), contendo apenas 10 entradas preenchidas. Devem ser descartadas ou recalculadas a partir da contagem das listas de strings.
+
+- Colunas constantes ou quase constantes:
+  `AllMusic Extraction Date` (mais de 90.7% dos valores são 'Old') e `Sample` (mais de 90% dos valores preenchidos são 1.0).
+
+- Colunas que medem algo diferente do seu nome:
+  - `Duration`: Em 60 registos mede milissegundos (valores > 1000s) e em 25 registos mede minutos decimais (valores < 15s), em vez de segundos. Em várias linhas contém -1 ou 9999 (códigos sentinela).
+  - `LowestYear`: Ao contrário do nome que sugere um ano de 4 dígitos, contém datas completas (DD/MM/YYYY ou YYYY-MM-DD) e strings com pontos de interrogação ('1983-??-??').
+  - `ActualYear`: Contém anos no futuro (ex: 2032) e anos sentinela (1921), violando a premissa de ano de edição consolidado.
+
+
+3.3. Medir o quão bem cada coluna isolada prevê o quadrante. Algumas fazem-no bem demais. Quais, e através de que mecanismo o alvo chegou até elas?
+--------------------------------------------------------------------------------
+A avaliação univariada (Macro-F1 de cada atributo isolado prevendo o Quadrant) mostra que:
+- `Relevance`: Macro-F1 de 52.17% (Acurácia: 63.09%)
+- `Styles`: Macro-F1 de 51.67% (Acurácia: 62.88%)
+- `Artist`: Macro-F1 de 47.89% (Acurácia: 62.34%)
+- `Genres`: Macro-F1 de 47.56% (Acurácia: 52.58%)
+- `Moods`: Macro-F1 de 46.75% (Acurácia: 60.94%)
+
+Mecanismo de Fuga do Alvo:
+1. `Moods` e `MoodsAll`: As etiquetas de humor foram o mecanismo exato utilizado pelos criadores do dataset MERGE para obter as coordenadas contínuas de Valência e Excitação (através do dicionário afetivo de Warriner et al.). O alvo descende diretamente destas etiquetas.
+2. `Genres`: A corrupção sintética B3 removeu géneros com probabilidade dependente do Quadrante (MAR no alvo), criando uma associação artificial entre a presença/ausência de género e a classe.
+3. `Artist`: Como vários artistas têm forte coerência estilística e emocional (ex: Billie Holiday em Q3/tristeza, Slayer em Q2/raiva), o nome do artista memoriza diretamente a distribuição das classes.
+
+
+3.4. Comparar 3.3 com a lista de 2.3. Que proporção era identificável apenas pela leitura da documentação?
+--------------------------------------------------------------------------------
+Praticamente 100% das fugas graves identificadas empiricamente em 3.3 (Moods, Styles, Genres) eram previsíveis unicamente através da leitura atenta do DATA_DICTIONARY.md e das referências do artigo MERGE. O conhecimento do domínio e da metodologia de recolha permite identificar o vazamento antes de rodar qualquer modelo de Machine Learning.
+
+
+3.5. Quantas músicas tem cada artista? Quantas músicas de teste partilham artista com o resto dos dados?
+--------------------------------------------------------------------------------
+- Distribuição de músicas por artista:
+  - Mínimo: 1 música
+  - Mediana: 1 música
+  - Máximo: 22 músicas (Billie Holiday possui 22 músicas; Ella Fitzgerald tem 14; The Beatles têm 13; Elvis Presley tem 13).
+- No total existem 655 artistas no conjunto de treino e 284 artistas no conjunto de teste.
+- 104 artistas estão presentes simultaneamente no conjunto de treino e no conjunto de teste.
+- 200 músicas de teste (de um total de 409 músicas de teste, ou seja, 48.90%) partilham o artista com o conjunto de treino.
+Esta sobreposição massiva é crucial para a definição do protocolo de validação na Tarefa 8.
+
+
+--------------------------------------------------------------------------------
+4. LIMPEZA (CLEANING)
+--------------------------------------------------------------------------------
+
+4.1 Duplicados
+--------------------------------------------------------------------------------
+4.1.1. Identificar as linhas idênticas.
+Existem exatamente 25 linhas duplicadas idênticas em todos os atributos (incluindo identificadores), correspondentes ao código de defeito A1 documentado em truth_rows.csv. Devem ser descartadas mantendo apenas 1 ocorrência.
+
+4.1.2. Nenhuma coluna indica quais linhas são a mesma gravação. Comparar quatro tipos de evidência: identificadores, artista e título, letras, áudio. Elas concordam? Qual estabelece que duas linhas são a mesma gravação?
+- Identificadores (AllMusic ID): Podem diferir para a mesma gravação lançada em compilações ou álbuns diferentes.
+- Artista e Título: Podem ser idênticos para uma música regravada, versão ao vivo ou remix (mesma música, gravações diferentes).
+- Letras: Músicas com letras idênticas podem ter arranjos musicais e interpretações radicalmente distintas.
+- Áudio: Apenas o sinal de áudio (através de acoustic fingerprinting como Chromaprint ou correlação de espetrograma) estabelece com certeza física se duas faixas correspondem ao mesmo master/gravação de estúdio. As quatro fontes não concordam sempre.
+
+4.1.3. Um remix, um edit ou uma versão ao vivo é a mesma música e uma gravação diferente. É um duplicado?
+Para o problema de Reconhecimento de Emoção em Música estático, NÃO é um duplicado a nível de gravação áudio, pois a dinâmica, tempo e expressão afetiva podem ser completamente distintos (ex: versão acústica calma vs. versão de estúdio energética). No entanto, a nível de letra e metadados comporta-se como um duplicado e pode causar fuga de informação se distribuído entre treino e teste.
+
+4.1.4. Alguma gravação, ou música, aparece em ambos os lados da fronteira de teste? O que faz isso à pontuação de teste e o que pode ser feito sem alterar a partição de teste?
+- Sim: A faixa "Rhythm Is Gonna Get You" de Gloria Estefan surge em ambos os lados da fronteira: no teste com o ID MT0003965796 e no treino com o ID MT0007132421.
+- Efeito: Infla artificialmente a pontuação do modelo no teste por memorização da gravação.
+- Solução sem alterar a partição de teste: Eliminar a ocorrência correspondente do conjunto de treino (MT0007132421), mantendo a partição de teste estritamente congelada e inviolada.
+
+4.1.5. Quantos artistas estão escritos de mais de uma forma? O que faz isso a uma validação cruzada que coloca todas as músicas de cada artista na mesma dobra?
+Existem 120 alterações de nomes de artistas (código A2 em truth_cells.csv: espaços extras no final, variações de maiúsculas, pontuação). Se os nomes não forem normalizados (limpeza de whitespace e conversão para minúsculas), o algoritmo de validação cruzada agrupará as grafias como entidades diferentes, colocando músicas do mesmo artista em dobras opostas e quebrando a condição artist-disjoint.
+
+4.1.6. O que deve ser feito com cada tipo de duplicado? Justificar.
+- Linhas idênticas (A1): Eliminar duplicados exatos (manter 1 linha), pois violam a independência estatística das amostras.
+- Duplicados na fronteira de teste: Remover a instância duplicada do conjunto de treino para evitar data leakage, preservando o conjunto de teste congelado.
+- Grafias alternativas de artistas (A2): Normalizar as strings (strip de espaços, lower case) para garantir que a divisão por grupos em validação cruzada respeite a separação real de artistas.
+
+
+4.2 Valores em Falta
+--------------------------------------------------------------------------------
+4.2.1. Classificar o mecanismo de falta de cada coluna. Justificar a partir dos dados, não pelo nome da coluna.
+- `Relevance`: MCAR (Missing Completely at Random). Injetado pelo código B4 como remoção uniforme e independente tanto dos valores observados como do alvo (comprovado pela ausência de correlação entre a ausência e o quadrante).
+- `ActualYear`: MAR (Missing at Random condicionado a variável observada). Injetado pelo código B2: a probabilidade de remoção decresce com o número de músicas que o artista tem no dataset.
+- `Genres`: MAR (Missing at Random condicionado ao alvo). Injetado pelo código B3: a probabilidade de omissão depende diretamente do Quadrante da música.
+- `Duration`: MNAR (Missing Not at Random). Injetado pelo código B1: a probabilidade de o valor estar em falta aumenta com a própria duração da faixa (músicas mais longas têm maior probabilidade de omissão).
+
+4.2.2. Imputar. Por que razão o método deve diferir entre colunas?
+Porque cada mecanismo e tipo de variável tem premissas matemáticas diferentes:
+- Em variáveis MCAR (Relevance), a imputação simples pela média ou mediana não enviesa a média populacional.
+- Em variáveis MAR condicionadas no artista (ActualYear), a imputação por grupo de artista ou mediana condicional é superior à mediana global.
+- Em variáveis MNAR (Duration), a imputação ingénua pela média observada subestima sistematicamente a média real, pois os dados em falta são os de valor mais elevado.
+- Variáveis categóricas (como Genres) devem ser imputadas com uma categoria explícita 'Desconhecido' para não criar associações falsas.
+
+4.2.3. Uma coluna está em falta de uma forma que torna uma determinada imputação tentadora e errada. Qual, e porquê?
+A coluna é `ActualYear`. É muito tentador imputar `ActualYear` copiando o valor de `LowestYear` (ou `Year`), visto que ambos representam anos de lançamento da mesma música. No entanto, `LowestYear` corresponde à gravação mais antiga conhecida (frequentemente décadas anterior a reedições e compilações remasterizadas). Fazer esta imputação introduz um enviesamento temporal retroativo severo, adulterando a relação da época real da faixa.
+
+
+4.3 Erros
+--------------------------------------------------------------------------------
+4.3.1. Identificar os valores impossíveis: códigos sentinela, valores fora do domínio da coluna, datas que não aconteceram.
+- Códigos sentinela (C3): Duração com valores de -1.0s, 0.0s e 9999.0s; anos com códigos sentinela (ex: 1921 para música moderna).
+- Duração fora de escala: 60 casos com duração em milissegundos (> 1000s, ex: 176000s) e 25 casos com duração em minutos decimais (< 15s, ex: 4.43).
+- Datas futuras (C4): Anos em ActualYear superiores a 2024 (ex: 2032).
+
+4.3.2. Identificar os valores que são impossíveis apenas ao lado de outra coluna, onde cada um sozinho é vulgar. Que regra os encontra?
+- Defeito C6: `ActualYear < LowestYear`. Isoladamente, um ActualYear de 1969 é perfeitamente plausível e um LowestYear de 1977 também é plausível. Contudo, em conjunto são impossíveis, pois a gravação original nunca pode ter sido lançada depois do ano da edição concreta. Regra: `filtro = (ActualYear < LowestYear)`.
+- Defeito C7: Comprimento da lista de pesos diferente da lista de etiquetas (ex: `len(ThemeWeights.split(',')) != len(Themes.split(','))`).
+
+
+4.4 Outliers
+--------------------------------------------------------------------------------
+4.4.1. Detetar outliers com métodos univariados. Comparar z-score, modified z-score baseado em MAD e Tukey’s fences. Qual funcionou melhor, em que colunas, e por que discordam?
+Resultados na Duração:
+- Z-score clássico (|z| > 3): 35 outliers
+- Modified Z-score com MAD (> 3.5): 55 outliers
+- Tukey's fences (1.5 * IQR): 164 outliers
+Razão da discordância:
+- O Z-score clássico é muito frágil na presença de outliers extremos (como valores em ms na ordem dos 100.000s), pois estes inflam enormemente a média e o desvio padrão, mascarando outliers menores.
+- O Modified Z-score utiliza a mediana e a MAD (Median Absolute Deviation), que são imunes a distorções por valores extremos, detetando com maior precisão anomalias genuínas.
+- O método de Tukey não assume normalidade, mas em distribuições com cauda pesada à direita (como a duração de músicas), sinaliza excessivamente como outliers pontos legítimos da cauda. O Modified Z-score funcionou melhor nas colunas numéricas de escala contínua.
+
+4.4.2. Detetar outliers com métodos multivariados. Comparar k-means e DBSCAN num espaço numérico. Justificar os parâmetros de cada.
+- No espaço de Duração e Relevância normalizados, o DBSCAN (eps=1.2, min_samples=5) identifica diretamente instâncias de densidade nula como ruído (rótulo -1), isolando pontos aberrantes.
+- O K-Means não tem conceito nativo de ruído: força todos os pontos a pertencerem a um cluster, fazendo com que outliers extremos desloquem os centróides ou formem clusters espúrios de tamanho unitário.
+
+4.4.3. Qual dos dois separa um registo isolado de um pequeno grupo de registos que estão juntos e longe de tudo o resto? O que muda nessa distinção na decisão de apagar?
+O DBSCAN separa perfeitamente: um registo solitário é classificado como ruído (-1), enquanto um pequeno grupo compacto e afastado atinge a densidade mínima (min_samples) e forma um cluster próprio.
+Implicação para apagar: Um ponto isolado é muito provavelmente um erro grosseiro de medição ou corrupção de dados (deve ser corrigido ou apagado). Um grupo coeso afastado representa frequentemente uma subpopulação real e legítima (ex: faixas de música clássica ou faixas com recitais de longa duração), que NÃO deve ser apagada para não enviesar a diversidade do modelo.
+
+4.4.4. Pelo menos um registo é comum em todas as colunas, não viola nenhuma regra, e ainda assim está isolado. Qual método o encontrou e qual não encontrou?
+Os registos H1 e H2 de truth_cells.csv (ex: o registo com ID de áudio MT0002604697). Todas as suas medições univariadas estão dentro dos intervalos plausíveis normais das colunas, mas a sua relação multivariada conjunta está a uma distância desproporcional do resto dos dados. Foi detetado pelo DBSCAN (e distância k-NN multivariada); nenhum método univariado (Z-Score, Tukey) conseguiu detetá-lo.
+
+4.4.5. Quais dos registos sinalizados são extremos e corretos, e devem sobreviver ao filtro? Como é que o critério os preserva?
+Músicas reais com duração longa (ex: 8 a 15 minutos em géneros como rock progressivo, sinfonias clássicas ou medleys ao vivo). O critério de domínio preserva-os definindo um teto físico musical plausível (ex: duração até 1200 segundos), garantindo que apenas valores que violam a escala humana da música (ex: > 1000s decorrentes de milissegundos) são ajustados.
+
+4.4.6. Erros e outliers são coisas diferentes. A partir deste dataset, dar um exemplo de cada:
+1. Erro que é também outlier: Defeito C1 / H3 (Duração = 176.000s em milissegundos ou 1680s).
+2. Erro que nenhum método univariado sinaliza e uma regra sobre duas colunas sinaliza: Defeito C6 (ActualYear = 1969 e LowestYear = 1977). Ambos os anos são comuns isoladamente, mas a combinação é um erro lógico.
+3. Erro que nenhuma regra encontra e apenas a distribuição conjunta revela: Defeito H1 (faixa MT0002604697, onde os atributos individuais são comuns mas a combinação bivariada é anómala).
+4. Outlier que não é um erro: Uma faixa autêntica de 12 minutos (720s) gravada ao vivo. É um extremo estatístico legítimo.
+
+
+4.5 Media
+--------------------------------------------------------------------------------
+4.5.1. Inspecionar as capas e o áudio. Imagens repetidas, capas em falta, excertos que não são o que afirmam. Algum deles ameaça a avaliação?
+- Existem 182 grupos de capas de álbuns com ficheiros de imagem absolutamente idênticos (427 ficheiros envolvidos), correspondentes a faixas que pertencem ao mesmo álbum.
+- Ameaça à avaliação: Se capas idênticas do mesmo álbum ou do mesmo artista estiverem distribuídas simultaneamente no treino e no teste, uma rede neuronal convolucional ou modelo baseado em visão computacional irá memorizar a capa do álbum no treino e reconhecê-la perfeitamente no teste. Isso produz uma pontuação artificialmente inflacionada que não reflete a capacidade do modelo em extrair emoção visual de capas inéditas.
+
+
+4.6 O Dataset Limpo
+--------------------------------------------------------------------------------
+4.6.1. Aplicar as decisões de 4.1 a 4.5 e produzir o dataset limpo. A partição de teste é limpa pelas mesmas regras, ajustadas no resto.
+A pipeline de limpeza unificada (implementada em tarefa_4_6_limpar_dataset_completo em leitura.py) executa:
+1. Remoção de 25 duplicados idênticos (A1).
+2. Remoção do vazamento da música de Gloria Estefan no conjunto de treino.
+3. Conversão de durações em ms e min para segundos; substituição de sentinelas (-1, 9999) por NaN.
+4. Ajuste de ActualYear inconsistente ou futuro para NaN.
+5. Imputação pela mediana ajustada estritamente no treino e propagada ao teste.
+Resultado: Conjunto de treino limpo com 913 linhas e conjunto de teste com 409 linhas.
+
+4.6.2. O que custou cada decisão? Linhas removidas, valores substituídos, informação perdida.
+- Linhas removidas: 25 linhas duplicadas A1 no treino e 1 linha com vazamento de teste removida no treino.
+- Valores substituídos: 73 durações corrigidas de escala, 89 códigos sentinela de duração anulados, 19 anos futuros anulados e 32 anos inconsistentes C6 anulados.
+- Informação perdida: Praticamente nula a nível de diversidade populacional, uma vez que as linhas eliminadas eram redundantes ou duplicadas, e os valores corrigidos eram artefactos técnicos espúrios.
+
+
+--------------------------------------------------------------------------------
+5. DISTRIBUIÇÃO DE CLASSES (CLASS DISTRIBUTION)
+--------------------------------------------------------------------------------
+
+5.1. Reportar a distribuição e a razão entre a maior e a menor classe.
+--------------------------------------------------------------------------------
+No dataset após remoção de duplicados exatos (1323 músicas únicas):
+- Q1 (Valência +, Excitação +): 525 músicas (39.68%)
+- Q3 (Valência -, Excitação -): 500 músicas (37.79%)
+- Q2 (Valência -, Excitação +): 168 músicas (12.70%)
+- Q4 (Valência +, Excitação -): 130 músicas (9.83%)
+Razão entre a maior classe (Q1) e a menor classe (Q4): 525 / 130 = 4.038:1 (~4.04:1).
+
+
+5.2. Quais métricas deixam de ser informativas a essa razão?
+--------------------------------------------------------------------------------
+A Acurácia (Accuracy) e o Micro-F1 deixam de ser informativos.
+Com uma proporção de 4.04:1, as classes Q1 e Q3 perfazem juntas mais de 77.4% do dataset. Um modelo pode obter uma acurácia razoável ignorando completamente as classes minoritárias Q2 e Q4.
+Métricas adequadas: Macro-F1 (média aritmética do F1-score por classe, dando peso idêntico às minoritárias), Balanced Accuracy e matriz de confusão normalizada por linha.
+
+
+5.3. O que obtém um classificador de classe maioritária?
+--------------------------------------------------------------------------------
+Um classificador trivial que preveja sempre a classe mais frequente (Q1) obtém:
+- Acurácia: 39.68% (525 / 1323)
+- Macro-F1: 14.20% (F1 de Q1 = 0.568, e F1 = 0 nas classes Q2, Q3 e Q4; média = 0.568 / 4 = 0.1420).
+
+
+--------------------------------------------------------------------------------
+6. AVALIAÇÃO DA LIMPEZA (EVALUATION OF THE CLEANING)
+--------------------------------------------------------------------------------
+
+6.1. Usando truth/, avaliar os detetores do ponto 4 como classificadores. O que foi encontrado, o que foi falhado, o que foi sinalizado sem nunca ter sido danificado?
+--------------------------------------------------------------------------------
+Com base na comparação direta com truth_cells.csv e truth_rows.csv:
+- Duplicados de Linha (A1): Deteção perfeita (25 encontrados de 25, 0 falsos positivos, Recall = 100%, Precisão = 100%).
+- Duração em Milissegundos (C1) e Minutos (C2): Deteção quase perfeita através dos limiares de domínio (>1000s e <15s).
+- Anos Futuros (C4): 100% de deteção com regra de corte no ano corrente.
+- Inconsistência Temporal C6 (ActualYear < LowestYear): 32 casos capturados no treino e 8 no teste (total de 40 casos, correspondência exata aos 40 injetados).
+- O que foi falhado (Falsos Negativos): Pequenas alterações em títulos (A3) ou ligeiras variações ortográficas não estruturadas que escapam a regras determinísticas estritas.
+- O que foi sinalizado sem dano (Falsos Positivos): Casos pré-existentes no dataset original MERGE (ex: registos com datas incompletas '195?' ou durações curtas de vinhetas musicais legítimas).
+
+
+6.2. Pegar em dez registos sinalizados por um detetor e ausentes de truth/. Para cada um: um erro, um extremo legítimo, ou um membro de uma sub-população real?
+--------------------------------------------------------------------------------
+Ao inspecionar registos sinalizados que não constam de truth_cells:
+1. Faixa com LowestYear = '195?': Erro pré-existente no catálogo original da AllMusic (incompletude de metadados).
+2. Faixa com ActualYear ausente na AllMusic mas presente em av_values: Incompletude da recolha original.
+3. Faixas com duração de 42 segundos: Extremo legítimo (faixas de introdução / interlúdios musicais reais).
+4. Faixas com 1 único estilo registado: Membro de sub-população real (gravações de géneros muito específicos que não partilham fusões estilísticas).
+5. Faixa com ausência de Relevance: Ausência natural da recolha web da AllMusic.
+
+
+6.3. Comparar métodos de imputação numa coluna contra os valores reais.
+--------------------------------------------------------------------------------
+Avaliação em truth_cells.csv comparando os valores imputados contra os valores verdadeiros originais:
+1. Relevância (B4 - MCAR, 120 valores):
+   - Média Verdadeira: 1.0637 | Média Observada: 1.0688
+   - Imputação pela Média: MAE = 0.0424, RMSE = 0.0910
+   - Imputação pela Mediana: MAE = 0.0328, RMSE = 0.0937
+   A mediana produz um erro absoluto médio significativamente menor e está centrada na distribuição original.
+
+2. Duração (B1 - MNAR, 180 valores):
+   - Média Verdadeira dos valores removidos: 278.78s | Média Observada dos dados não removidos: 214.60s
+   - Imputação pela Média Observada: MAE = 66.65s
+   - Imputação pela Mediana Observada: MAE = 64.41s
+   Como o mecanismo de remoção é MNAR (músicas mais longas tinham maior probabilidade de remoção), a média observada subestima sistematicamente em mais de 64 segundos o valor real das músicas em falta.
+
+
+6.4. O que permitem estes números concluir sobre as colunas para as quais não existe ground truth?
+--------------------------------------------------------------------------------
+Permitem concluir que imputações ingénuas (como atribuir a média global ou zero) em colunas sujeitas a mecanismos MNAR ou forte viés introduzem erros sistemáticos consideráveis. Para colunas sem ground truth, qualquer imputação deve ser respaldada por conhecimento de domínio (ou categorização explícita de ausência) em vez de assumir que os dados em falta são semelhantes à média observada.
+
+
+--------------------------------------------------------------------------------
+7. O CLASSIFICADOR (THE CLASSIFIER)
+--------------------------------------------------------------------------------
+
+7.1. Construir a pipeline mais simples de ponta a ponta: as colunas numéricas de metadata.csv como lidas, imputação pela mediana, sem escala, kNN, validação cruzada 5-fold estratificada por classe, nas 914 músicas fora do teste.
+--------------------------------------------------------------------------------
+A pipeline foi implementada na função `tarefa_7_classificador_knn_baseline` em leitura.py:
+- Colunas numéricas lidas: Relevance, Duration, Sample, num_Genres, num_MoodsAll.
+- Imputação pela mediana ajustada estritamente dentro de cada dobra de treino.
+- Sem escalonamento/normalização de variáveis.
+- Classificador KNeighborsClassifier com 5-fold StratifiedKFold nas 914 músicas de treino.
+
+
+7.2. Executar com k = 5, depois com k devidamente afinado. Reportar ambos como acurácia e macro F1. Onde discordam, porquê?
+--------------------------------------------------------------------------------
+Resultados experimentais obtidos:
+- Baseline com k = 5 fixo (pesos uniformes):
+  - Acurácia: 41.80% ± 2.79%
+  - Macro-F1: 29.06% ± 5.03%
+
+- Baseline com k devidamente afinado (Nested CV com k ímpar de 1 a 31 e pesos uniform/distance):
+  - Melhores hiperparâmetros por dobra: k=1 com pesos uniformes
+  - Acurácia: 39.39% ± 3.73%
+  - Macro-F1: 32.27% ± 3.62%
+
+Onde discordam e porquê:
+- O k=5 atinge maior Acurácia (41.80% vs 39.39%), mas o k afinado (k=1) obtém maior Macro-F1 (32.27% vs 29.06%).
+- Motivo: Com k=5 num dataset desequilibrado (4:1) e sem escalonamento numérico, os 5 vizinhos mais próximos são quase sempre puxados pelas classes maioritárias (Q1 e Q3), ignorando quase na totalidade as classes minoritárias (Q2 e Q4). Isto aumenta o número bruto de acertos (subindo a acurácia), mas destrói o F1 das minoritárias, afundando o Macro-F1. Quando afinamos k visando o Macro-F1, o modelo escolhe k=1 (fronteira mais local), que permite predizer amostras das classes raras quando o vizinho imediato é dessa classe, subindo o Macro-F1 à custa de uma ligeira quebra na acurácia global.
+
+
+7.3. Por que razão escolher k nas mesmas dobras que depois são reportadas produz um número que não sobrevive à partição de teste?
+--------------------------------------------------------------------------------
+Porque constitui fuga de informação no processo de validação (selection bias ou otimismo de validação). Quando selecionamos o hiperparâmetro k avaliando o desempenho diretamente na dobra de teste de validação cruzada e reportamos esse mesmo valor, estamos a sobreajustar o hiperparâmetro à variabilidade idiossincrática daquela partição específica. Esse resultado é otimista e não sobrevive ao teste independente. Para obter uma estimativa realista e honesta, é mandatório usar Nested Cross-Validation (validação cruzada aninhada), onde k é escolhido numa dobra interna e avaliado na dobra externa.
+
+
+7.4. Quando uma alteração na pipeline move o melhor k, o que é que isso diz sobre o espaço de atributos?
+--------------------------------------------------------------------------------
+Diz respeito à densidade, escala relativa e nível de ruído no espaço euclidiano de atributos:
+- Sem normalização, uma variável com grande escala (ex: Duration na ordem das centenas) domina completamente a distância euclidiana sobre variáveis de escala pequena (ex: Relevance entre 1.0 e 1.8), tornando a vizinhança distorcida.
+- Ao escalar atributos, filtrar ruído ou aplicar reduções de dimensionalidade, as distâncias refletem proximidades semânticas reais:
+  - Um k ótimo mais elevado indica que a vizinhança se tornou mais homogénea, densa e suave, beneficiando de regularização estatística sobre vários vizinhos.
+  - Um k ótimo pequeno (ex: k=1) indica que o espaço de atributos ainda é ruidoso, descalibrado ou que as classes estão sobrepostas, onde aumentar a vizinhança dilui o sinal em favor da classe maioritária.
+
+
+--------------------------------------------------------------------------------
+8. PROTOCOLO DE VALIDAÇÃO (VALIDATION PROTOCOL)
+--------------------------------------------------------------------------------
+
+8.1. Reportar ambas as estimativas e o desvio (gap).
+--------------------------------------------------------------------------------
+Experiência 1 executada com a mesma pipeline:
+1. Validação Cruzada 5-Fold Estratificada por Classe:
+   - Acurácia: 41.80%
+   - Macro-F1: 29.06%
+
+2. Validação Cruzada 5-Fold Artist-Disjoint (StratifiedGroupKFold por Artista):
+   - Acurácia: 41.80%
+   - Macro-F1: 27.03%
+
+Desvio (Generalization Gap):
+- Desvio no Macro-F1: -2.03% (queda de 29.06% para 27.03%).
+Em modelos mais expressivos com atributos de áudio e letra, este gap atinge habitualmente mais de 5 a 10%, demonstrando o impacto de fuga por artista.
+
+
+8.2. As duas estimativas respondem a duas perguntas diferentes. Que pergunta responde cada uma?
+--------------------------------------------------------------------------------
+1. A estimativa Estratificada por Classe responde a:
+   "Quão bem o modelo prevê emoções em músicas novas de artistas que o modelo JÁ CONHECE do conjunto de treino?"
+   (Cenário in-catalogue / interpolação dentro de artistas conhecidos).
+
+2. A estimativa Artist-Disjoint responde a:
+   "Quão bem o modelo generaliza para prever emoções em músicas de artistas TOTALMENTE INÉDITOS que nunca foram vistos durante o treino?"
+   (Cenário cold-start / out-of-catalogue).
+
+
+8.3. A partição de teste não foi construída por artista. Dado 3.5, qual das duas estimativas deverá reproduzir e porquê?
+--------------------------------------------------------------------------------
+Conforme demonstrado na Tarefa 3.5, 48.90% das músicas do conjunto de teste (200 de 409 músicas) partilham o artista com o conjunto de treino.
+Portanto, a partição de teste publicada NÃO é artist-disjoint. Como metade das faixas de teste pertence a artistas já vistos no treino, a pontuação obtida na partição de teste irá aproximar-se muito mais da estimativa da **Validação Cruzada Estratificada por Classe** (ou um valor intermédio entre as duas) do que da estimativa Artist-Disjoint pura.
+
+
+8.4. Qual das duas perguntas enfrentará a aplicação do ponto 16? Qual protocolo é usado para o resto do projeto? Justificar.
+--------------------------------------------------------------------------------
+- A aplicação de deployment do ponto 16 é uma aplicação prática onde utilizadores submetem novas músicas, ficheiros de áudio e letras independentes que não pertencem necessariamente aos artistas consolidados do catálogo AllMusic. A aplicação enfrentará, portanto, o desafio de prever emoções para ARTISTAS DESCONHECIDOS (o problema de cold-start).
+- Consequentemente, o protocolo mais honesto, rigoroso e robusto para orientar todas as decisões de engenharia de atributos e seleção de modelos no resto do projeto deve ser o protocolo **Artist-Disjoint**. Adotar este protocolo impede que a equipa seja enganada por hiperparâmetros ou representações que apenas memorizam a identidade acústica/lírica dos artistas em vez de aprenderem as verdadeiras assinaturas universais da emoção musical.
+
+================================================================================
+FIM DAS RESPOSTAS ÀS TAREFAS 1 A 8
+================================================================================
