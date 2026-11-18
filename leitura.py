@@ -192,8 +192,8 @@ def tarefa_4_1_identificar_duplicados(df, test_songs_df):
     """
     dup_identicos = df.duplicated().sum()
     df_temp = df.drop_duplicates().copy()
-    df_temp["clean_art"] = df_temp["Artist"].astype(str).str.strip().str.lower()
-    df_temp["clean_tit"] = df_temp["Title"].astype(str).str.strip().str.lower()
+    df_temp["clean_art"] = df_temp["Artist"].astype(str).str.strip().str.lower().str.replace(r'\s+', ' ', regex=True)
+    df_temp["clean_tit"] = df_temp["Title"].astype(str).str.strip().str.lower().str.replace(r'\s+', ' ', regex=True)
     agrupado = df_temp.groupby(["clean_art", "clean_tit"]).size()
     mesma_musica = agrupado[agrupado > 1]
     test_ids = set(test_songs_df["Audio_Song"])
@@ -497,39 +497,49 @@ def tarefa_8_protocolo_validacao_experiencia(meta_train_df):
     num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     X = df[num_cols].values
     y = df["Quadrant"].values
-    artists = df["Artist"].values
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    accs_strat, f1s_strat = [], []
-    for tr_idx, val_idx in skf.split(X, y):
-        imp = SimpleImputer(strategy='median')
-        X_tr = imp.fit_transform(X[tr_idx])
-        X_val = imp.transform(X[val_idx])
-        clf = KNeighborsClassifier(n_neighbors=5, weights='uniform')
-        clf.fit(X_tr, y[tr_idx])
-        preds = clf.predict(X_val)
-        accs_strat.append(accuracy_score(y[val_idx], preds))
-        f1s_strat.append(f1_score(y[val_idx], preds, average='macro'))
-    strat_acc = np.mean(accs_strat)
-    strat_f1 = np.mean(f1s_strat)
-    sgkf = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42)
-    accs_disjoint, f1s_disjoint = [], []
-    for tr_idx, val_idx in sgkf.split(X, y, groups=artists):
-        imp = SimpleImputer(strategy='median')
-        X_tr = imp.fit_transform(X[tr_idx])
-        X_val = imp.transform(X[val_idx])
-        clf = KNeighborsClassifier(n_neighbors=5, weights='uniform')
-        clf.fit(X_tr, y[tr_idx])
-        preds = clf.predict(X_val)
-        accs_disjoint.append(accuracy_score(y[val_idx], preds))
-        f1s_disjoint.append(f1_score(y[val_idx], preds, average='macro'))
-    disjoint_acc = np.mean(accs_disjoint)
-    disjoint_f1 = np.mean(f1s_disjoint)
+    artists = df["Artist"].astype(str).str.strip().str.lower().str.replace(r'\s+', ' ', regex=True).values
+
+    def _run_nested_cv(cv_splitter, groups=None):
+        accs, f1s = [], []
+        splits = cv_splitter.split(X, y, groups) if groups is not None else cv_splitter.split(X, y)
+        for fold, (tr_idx, val_idx) in enumerate(splits):
+            X_tr, X_val = X[tr_idx], X[val_idx]
+            y_tr, y_val = y[tr_idx], y[val_idx]
+            g_tr = groups[tr_idx] if groups is not None else None
+            inner_cv = StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=fold) if groups is not None else StratifiedKFold(n_splits=5, shuffle=True, random_state=fold)
+            best_sc, best_param = -1, (5, 'uniform')
+            for k in range(1, 32, 2):
+                for w in ['uniform', 'distance']:
+                    scs = []
+                    in_splits = inner_cv.split(X_tr, y_tr, g_tr) if g_tr is not None else inner_cv.split(X_tr, y_tr)
+                    for in_tr, in_val in in_splits:
+                        imp = SimpleImputer(strategy='median')
+                        in_X_tr = imp.fit_transform(X_tr[in_tr])
+                        in_X_val = imp.transform(X_tr[in_val])
+                        knn = KNeighborsClassifier(n_neighbors=k, weights=w)
+                        knn.fit(in_X_tr, y_tr[in_tr])
+                        scs.append(f1_score(y_tr[in_val], knn.predict(in_X_val), average='macro'))
+                    m_sc = np.mean(scs)
+                    if m_sc > best_sc:
+                        best_sc, best_param = m_sc, (k, w)
+            imp = SimpleImputer(strategy='median')
+            X_tr_imp = imp.fit_transform(X_tr)
+            X_val_imp = imp.transform(X_val)
+            best_clf = KNeighborsClassifier(n_neighbors=best_param[0], weights=best_param[1])
+            best_clf.fit(X_tr_imp, y_tr)
+            preds = best_clf.predict(X_val_imp)
+            accs.append(accuracy_score(y_val, preds))
+            f1s.append(f1_score(y_val, preds, average='macro'))
+        return np.mean(accs), np.std(accs), np.mean(f1s), np.std(f1s)
+
+    strat_acc, strat_acc_std, strat_f1, strat_f1_std = _run_nested_cv(StratifiedKFold(n_splits=5, shuffle=True, random_state=42))
+    disjoint_acc, disjoint_acc_std, disjoint_f1, disjoint_f1_std = _run_nested_cv(StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=42), groups=artists)
     gap_acc = (strat_acc - disjoint_acc) * 100
     gap_f1 = (strat_f1 - disjoint_f1) * 100
-    print(f"\nComparação dos Protocolos de Validação:")
-    print(f" - Estratificado por Classe   -> Acurácia: {strat_acc*100:.2f}%, Macro-F1: {strat_f1*100:.2f}%")
-    print(f" - Artist-Disjoint (por Grupo)-> Acurácia: {disjoint_acc*100:.2f}%, Macro-F1: {disjoint_f1*100:.2f}%")
-    print(f" - Desvio (Gap de Generalização): Acurácia: {gap_acc:+.2f}%, Macro-F1: {gap_f1:+.2f}%")
+    print(f"\nComparação dos Protocolos de Validação (Nested CV):")
+    print(f" - Estratificado por Classe   -> Acurácia: {strat_acc*100:.2f}% ± {strat_acc_std*100:.2f}%, Macro-F1: {strat_f1*100:.2f}% ± {strat_f1_std*100:.2f}%")
+    print(f" - Artist-Disjoint (por Grupo)-> Acurácia: {disjoint_acc*100:.2f}% ± {disjoint_acc_std*100:.2f}%, Macro-F1: {disjoint_f1*100:.2f}% ± {disjoint_f1_std*100:.2f}%")
+    print(f" - Desvio (Gap de Generalização): Acurácia: {gap_acc:+.2f} pp, Macro-F1: {gap_f1:+.2f} pp")
     return {"stratified_acc": strat_acc,"stratified_f1": strat_f1,"disjoint_acc": disjoint_acc,"disjoint_f1": disjoint_f1,"gap_f1": gap_f1}
 
 # ==============================================================================
